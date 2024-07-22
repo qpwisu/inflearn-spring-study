@@ -1,6 +1,7 @@
 package hello.core;
 
 import hello.core.discount.DiscountPolicy;
+import hello.core.discount.FixDiscountPolicy;
 import hello.core.discount.RateDiscountPolicy;
 import hello.core.member.MemberRepository;
 import hello.core.member.MemberService;
@@ -36,8 +37,12 @@ public class AppConfig {
         return new OrderServiceImpl(memberRepository(), discountPolicy());
     }
 
+
+    // FixDiscountPolicy 정책을 변경할 수 있ㄷ ㅏ
     @Bean
     public DiscountPolicy discountPolicy() {
+        //return new FixDiscountPolicy();
         return new RateDiscountPolicy();
     }
+
 }
