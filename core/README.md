@@ -363,7 +363,172 @@ AppConfig가 생성한다. 그리고 AppConfig는 OrderServiceImpl 이 아닌 Or
 - AppConfig 처럼 객체를 생성하고 관리하면서 의존관계를 연결해 주는 것을 IoC 컨테이너 또는 DI 컨테이너라 한다.
 - 의존관계 주입에 초점을 맞추어 최근에는 주로 DI 컨테이너라 한다. 또는 어샘블러, 오브젝트 팩토리 등으로 불리기도 한다.
 
-## 세션[4] 스프링 컨테이너와 스프링 빈
+## 세션[4] 스프링 컨테이너와 스프링 빈(20240723)
+
+---
+
+### 스프링 컨테이너와 빈
+
+스프링 컨테이너는 스프링 빈의 생성과 관리를 담당하며, 다양한 설정 형식을 지원
+
+1. **스프링 컨테이너 생성**
+    - `new AnnotationConfigApplicationContext(AppConfig.class)`와 같이 자바 설정 클래스(AppConfig)를 기반으로 생성 → 스프링 컨테이너 생성(빈 저장소 생성)
+        
+        ```java
+        ApplicationContext applicationContext = new AnnotationConfigReactiveWebApplicationContext(AppConfig.class);
+        ```
+        
+        - ApplicationContext : 인터페이스이자 스프링 컨테이너
+        - AnnotationConfigReactiveWebApplicationContext : 구현체
+        - AppConfig : 자바 설정 클래스로 스프링 컨테이너의 구성정보
+    - XML 설정 파일을 사용하는 경우 `GenericXmlApplicationContext` 사용
+2. **스프링 빈 등록**
+    - 스프링 컨테이너가 설정 클래스의 메서드(Appconfig)의 @Bean 태그가 붙은 메서드들을 호출해서 결과를 빈 저장소에 저장
+    - 빈 이름은 메서드 이름을 사용하며, `@Bean(name="customName")`으로 지정 가능
+        - **Bean 이름은 중복되어선 절대 안된다**
+3. **스프링 빈 의존관계 설정**
+    - 설정 정보를 참고하여 의존관계 주입(DI) 처리
+        
+        ```java
+            // AppConfig.class
+            @Bean
+            public MemberService memberService() {
+                System.out.println("Call AppConfig.memberService");
+                return new MemberServiceImpl(memberRepository());
+            }
+        
+            @Bean
+            public MemberRepository memberRepository() {
+                System.out.println("Call AppConfig.memberRepository");
+                return new MemoryMemberRepository();
+            }
+        
+            @Bean
+            public OrderService orderService() {
+                System.out.println("Call AppConfig.orderService");
+                return new OrderServiceImpl(memberRepository(), discountPolicy());
+            }
+        
+            // FixDiscountPolicy 정책을 변경할 수 있ㄷㅏ
+            @Bean
+            public DiscountPolicy discountPolicy() {
+                //return new FixDiscountPolicy();
+                return new RateDiscountPolicy();
+            }
+        ```
+        
+    - 생성자 주입과 세터 주입 등 다양한 방식 지원
+
+### 스프링 빈 조회
+
+1. **모든 빈 조회**
+    
+    ```java
+    @Test
+    @DisplayName("애플리케이션 빈 출력하기")
+    void findApplicationBean() {
+        String[] beanDefinitionNames = ac.getBeanDefinitionNames();
+        for (String beanDefinitionName : beanDefinitionNames) {
+            BeanDefinition beanDefinition = ac.getBeanDefinition(beanDefinitionName);
+    
+            //Role ROLE_APPLICATION: 직접 등록한 애플리케이션 빈
+            //Role ROLE_INFRASTRUCTURE: 스프링이 내부에서 사용하는 빈
+            if (beanDefinition.getRole() == BeanDefinition.ROLE_APPLICATION) {
+                Object bean = ac.getBean(beanDefinitionName);
+                System.out.println("Name = " + beanDefinitionName + "object = " + bean);
+            }
+        }
+    }
+    ```
+    
+    - `ac.getBeanDefinitionNames()`로 모든 빈 이름 조회
+    - 빈 구분
+        - `Role ROLE_APPLICATION`: 직접 등록한 애플리케이션 빈
+        - `Role ROLE_INFRASTRUCTURE`: 스프링이 내부에서 사용하는 빈
+2. **특정 빈 조회**
+    
+    ```java
+        AnnotationConfigApplicationContext ac = new AnnotationConfigApplicationContext(AppConfig.class);
+    
+        @Test
+        @DisplayName("빈 이름으로 조회")
+        void findBeanByName() {
+            MemberService memberService = ac.getBean("memberService", MemberService.class);
+            assertThat(memberService).isInstanceOf(MemberServiceImpl.class);
+        }
+    
+        @Test
+        @DisplayName("이름없이 타입으로 조회")
+        void findBeanByType() {
+            MemberService memberService = ac.getBean(MemberService.class);
+            assertThat(memberService).isInstanceOf(MemberServiceImpl.class);
+        }
+    		// 구현체로 조회는 웬만하면 하지 말자 
+        @Test
+        @DisplayName("구체 타입으로 조회")
+        void findBeanByName2() {
+            MemberService memberService = ac.getBean("memberService", MemberServiceImpl.class);
+            assertThat(memberService).isInstanceOf(MemberServiceImpl.class);
+        }
+    
+        @Test
+        @DisplayName("빈 이름으로 조회 실패 테스트")
+        void findBeanByNameX() {
+            assertThrows(NoSuchBeanDefinitionException.class,
+                    () -> ac.getBean("xxxxx", MemberService.class));
+        }
+    ```
+    
+    - `ac.getBean(beanName, 타입)`으로 빈 이름과 타입을 지정하여 조회
+        - 빈 이름, 타입 둘 중 하나 만으로도 조회 가능
+    - 타입만으로 조회할 경우 `NoSuchBeanDefinitionException` 예외 발생 가능
+3. **동일한 타입이 둘 이상**
+    
+    ```java
+    // config 파일의 아래 처럼 타입이  MemberRepository가 두개인 경우 
+    @Bean
+    public MemberRepository memberRepository1() {
+        return new MemoryMemberRepository();
+      }
+    
+    @Bean
+    public MemberRepository memberRepository2() {
+        return new MemoryMemberRepository();
+    }
+    ```
+    
+    - ac.getBean(타입)으로 조회 시 중복 오류 발생 가능
+        - ac.getBean(빈 이름,타입)으로 해결 가능
+    - `ac.getBeansOfType(타입)`으로 해당 타입의 모든 빈 조회 가능
+- 상속관계 빈 조회
+    
+    부모 타입으로 조회하면, 자식 타입도 모두 함께 조회한다 
+    
+
+### BeanFactory와 ApplicationContext
+
+![Untitled](https://prod-files-secure.s3.us-west-2.amazonaws.com/720abf95-7e09-46c8-8ccd-ff391e9ecc90/72c6cc4e-700d-4dbb-9f06-a7995b5649d6/Untitled.png)
+
+- **BeanFactory**
+    - 스프링 컨테이너의 최상위 인터페이스
+    - 빈을 관리하고 조회하는 기본 기능 제공
+- **ApplicationContext - 대부분 이거 사용**
+    - BeanFactory를 상속받아 더 많은 부가 기능 제공
+    - 메시지소스를 활용한 국제화, 환경변수(개발,운영)등 을 구분하여 관리, 애플리케이션 이벤트, 편리한 리소스 조회 등
+
+### 다양한 설정 형식 지원
+
+- **자바 코드 설정**
+    - `AnnotationConfigApplicationContext(AppConfig.class)` 사용
+- **XML 설정**
+    - `GenericXmlApplicationContext("appConfig.xml")` 사용
+    - XML 설정 정보와 자바 코드 설정 정보는 유사
+
+### 스프링 빈 설정 메타 정보 - BeanDefinition
+
+- 스프링 컨테이너가 자바 코드(AppConfig)를 읽어서 `BeanDefinition` 를 만듬
+- 빈에 대한 메타 정보들이 있음
+- XML, 자바 코드 등 다양한 설정 형식을 `BeanDefinition`으로 추상화하여 사용 - 이렇게만 알고있자
 
 ---
 

@@ -37,8 +37,7 @@ public class AppConfig {
         return new OrderServiceImpl(memberRepository(), discountPolicy());
     }
 
-
-    // FixDiscountPolicy 정책을 변경할 수 있ㄷ ㅏ
+    // FixDiscountPolicy 정책을 변경할 수 있ㄷㅏ
     @Bean
     public DiscountPolicy discountPolicy() {
         //return new FixDiscountPolicy();
