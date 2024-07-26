@@ -1,4 +1,4 @@
-package hello.core.autowired;
+package hello.core.member.autowired;
 
 import hello.core.member.Member;
 import org.junit.jupiter.api.Test;

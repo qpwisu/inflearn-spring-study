@@ -530,22 +530,392 @@ AppConfig가 생성한다. 그리고 AppConfig는 OrderServiceImpl 이 아닌 Or
 - 빈에 대한 메타 정보들이 있음
 - XML, 자바 코드 등 다양한 설정 형식을 `BeanDefinition`으로 추상화하여 사용 - 이렇게만 알고있자
 
----
-
-## 세션[5] 싱글톤 컨테이너
+## 세션[5] 싱글톤 컨테이너(20240726)
 
 ---
 
-## 세션[6] 컴포넌트 스캔
+### 싱글톤 패턴
+
+- **클래스의 인스턴스가 딱 1개만 생성되는 것을 보장하는 디자인 패턴**
+- private 생성자를 사용해서 외부에서 임의로 new 키워드를 사용하지 못하도록 막아야 한다
+- 문제점
+    
+    싱글톤 패턴을 구현하는 코드 자체가 많이 들어간다.
+    의존관계상 클라이언트가 구체 클래스에 의존한다. DIP를 위반한다.
+    클라이언트가 구체 클래스에 의존해서 OCP 원칙을 위반할 가능성이 높다.
+    테스트하기 어렵다.
+    내부 속성을 변경하거나 초기화 하기 어렵다.
+    private 생성자로 자식 클래스를 만들기 어렵다.
+    결론적으로 유연성이 떨어진다.
+    안티패턴으로 불리기도 한다.
+    
+
+### 싱글톤 컨테이너
+
+- 스프링 컨테이너는 싱글톤 패턴의 문제점을 해결하면서, 객체 인스턴스를 싱글톤(1개만 생성)으로 관리한다.
+- 지금까지 우리가 학습한 스프링 빈이 바로 싱글톤으로 관리되는 빈이다.
+- 스프링 컨테이너는 싱글턴 패턴을 적용하지 않아도, 객체 인스턴스를 싱글톤으로 관리한다.
+- 스프링 컨테이너는 싱글톤 컨테이너 역할을 한다. 이렇게 싱글톤 객체를 생성하고 관리하는 기능을 싱글톤 레지스트리라 한다.
+- 스프링 컨테이너의 이런 기능 덕분에 싱글턴 패턴의 모든 단점을 해결하면서 객체를 싱글톤으로 유지할 수 있다.
+싱글톤 패턴을 위한 지저분한 코드가 들어가지 않아도 된다.
+DIP, OCP, 테스트, private 생성자로 부터 자유롭게 싱글톤을 사용할 수 있다.
+
+**Appconfig에서 new MemoryMemberRepository(); 이렇게 같은 인스턴스를 여러번 생성하는데 싱글톤이 유지 되는가?**
+
+- @Configuration이 붙어있으면 @Bean이 붙은 메서드마다 이미 스프링 빈이 존재하면 존재하는 빈을 반환하고, 스프링 빈이 없으면 생성해서 스프링 빈으로 등록하고 반환하는 코드가 동적으로 만들어진다. 덕분에 싱글톤이 보장되는 것이다.
+
+### 싱글톤 방식의 주의점
+
+- 여러 클라이언트가 하나의 객체 인스턴스를 공유하기 때문에 싱글톤 객체는 상태를 유지(stateful)하게 설계하면 안된다
+- 무상태(stateless)로 설계해야 한다
+    - 특정 클라이언트에 의존적인 필드가 있으면 안ㄴ된다
+    - 특정 클라이언트가 값을 변경할 수 있는 필드가 있으면 안된다
+    - 가급적 read만 가능해야한다
+    
+
+## 세션[6] 컴포넌트 스캔(20240726)
 
 ---
 
-## 세션[7] 의존관계 자동 주입
+이전에는 설정파일(Appconfig)에 `@Configuration` 이 붙은 클래스에 @Bean으로 빈에 등록했다
+
+- 컴포넌트 스캔 : 스프링에서 설정 정보가 없어도 자동으로 스프링 빈을 등록하는 기능
+- @Autowired : 의존관계를 자동으로 주입하는 기능
+
+```java
+@Configuration
+@ComponentScan(
+        excludeFilters= @ComponentScan.Filter(type = FilterType.ANNOTATION, classes = Configuration.class)
+)
+public class AutoAppConfig {
+
+}
+
+컴포넌트 스캔을 사용하면 AppConfig, TestConfig 등 이전 설정 정보도 같이 등록되기때문에 excludeFilters 이용해 설정정보를 스캔 대상에서 제외,
+일반적으로는 제외하지 않는다. 
+```
+
+- 컴포넌트 스캔을 사용하려면 먼저 @ComponentScan 을 설정 정보에 붙여주면 된다.
+- 기존의 AppConfig와는 다르게 @Bean으로 등록한 클래스가 하나도 없다!
+
+ 각 클래스가 컴포넌트 스캔의 대상이 되도록 @Component 애노테이션을 붙여주자.
+
+```java
+@Component
+public class MemberServiceImpl implements MemberService{
+    private final MemberRepository memberRepository ;
+		@Autowired
+    public MemberServiceImpl(MemberRepository memberRepository) {
+        this.memberRepository = memberRepository;
+    }
+```
+
+- 이전에 AppConfig에서는 @Bean 으로 직접 설정 정보를 작성했고, 의존관계도 직접 명시했다. 이제는 이런 설정 정보 자체가 없기 때문에, 의존관계 주입도 이 클래스 안에서 해결해야 한다.
+- **@Autowired 는 의존관계를 자동으로 주입해준다 - 스프링 컨테이너가 자동으로 스프링 빈을 찾아서 주입한다 = getBean(MemberRepository.class)와 같다**
+
+- @ComponentScan 은 @Component 가 붙은 모든 클래스를 스프링 빈으로 등록한다.
+- 이때 스프링 빈의 기본 이름은 클래스명을 사용하되 맨 앞글자만 소문자를 사용한다.
+    - 빈 이름 기본 전략: MemberServiceImpl 클래스 memberServiceImpl
+    - 빈 이름 직접 지정: 만약 스프링 빈의 이름을 직접 지정하고 싶으면
+    @Component("memberService2") 이런식으로 이름을 부여하면 된다.
+
+### 탐색 위치와 기본 스캔 대상
+
+탐색할 패키지의 시작 위치 지정
+
+```java
+@ComponentScan(
+	basePackages = "hello.core", // 탐색 패키지의 시작위치 지정. 하위 패키지 전부 탐색
+}
+```
+
+**권장하는 방법**
+개인적으로 즐겨 사용하는 방법은 패키지 위치를 지정하지 않고, **@ComponentScan이 붙은 설정 정보 클래스의 위치를 프로젝트 최상단에 두는 것이다**(하위 패키지 전부 탐색하기 때문에). 최근 스프링 부트도 이 방법을 기본으로 제공한다.
+
+최상단인 @SpringBootApplication에 @ComponentScan 들어있다
+
+@Controller, @Service, @Repository, @Configuration에 @ComponentScan가 포함되어있다 
+
+@Configuration : 앞서 보았듯이 스프링 설정 정보로 인식하고, 스프링 빈이 싱글톤을 유지하도록 추가 처리를 한다.
+
+### 필터
+
+includeFilters : 컴포넌트 스캔 대상을 추가로 지정한다.
+excludeFilters : 컴포넌트 스캔에서 제외할 대상을 지정한다
+
+### 중복 등록과 충돌
+
+자동 빈 등록(@Component) vs 자동 빈 등록
+
+- 컴포넌트 스캔에 의해 자동으로 스프링 빈이 등록되는데, 그 이름이 같은 경우 스프링은 오류를 발생시킨다. ConflictingBeanDefinitionException 예외 발생
+
+수동 빈 등록(@Bean) vs 자동 빈 등록(@Component)
+
+- 이 경우 수동 빈 등록이 우선권을 가진다.(수동 빈이 자동 빈을 오버라이딩 해버린다.)
+
+## 세션[7] 의존관계 자동 주입(20240726)
 
 ---
 
-## 세션[8] 빈 생명주기 콜백
+### 의존성 주입 **(DI: Dependency Injection)이란?**
 
----
+어떤 객체가 사용하는 의존 객체를 직접 만들어 사용하는게 아니라, 주입 받아 사용하는 방법
 
-## 세션[9] 빈 스코프
+### 의존성 주입 방법 4가지
+
+- 생성자 주입(권장)
+    - 생성자는 클래스명과 메서드명이 같고 반환 타입없음
+    - 생성자를 통해 의존관계를 주입
+    - 한번만 호출되기 때문에 final로 관리 가능
+        - 생성자로 주입 받은 것은 불변으로 관할 수 있다(생성자를 두번 부르진 않기 떄문에)
+        - 생성자 주입을 사용하면 필드에 final 키워드를 사용할 수 있다. 그래서 생성자에서 혹시라도 값이 설정되지 않는 오류를 컴파일 시점에 막아준다.
+    - 생성자 주입 사용 시, **생성자가 1개인 경우 @Autowired를 생략할 수 있다.**
+    - 변경 가능성이 없는 의존 관계에 사용
+    - 롬복 라이브러리의 @RequiredArgsConstructor를 붙히면 final,@notnull 이 붙은 필드를 인자로 받는 생성자를 자동으로 생성해줌
+- 수정자(setter) 주입
+    - 변경 가능성이 있는 의존 관계에 사용
+    - 생성자 호출 이후 필드 변수에 변경이 일어날 수 있어 final 사용 불가능
+- 필드 주입
+    - autowired 만 붙이면 자동으로 의존성 주입
+    - 코드가 간결하지만 외부접근이 불가능해 테스트가 어려움
+    - DI프레임워크가 없으면 사용 할 수 없음, 사용 권장 하지 않음
+
+```java
+# 생성자 
+@Service
+public class StationConstructorService {
+    private final StationRepository stationRepository;
+
+    @Autowired 
+    public StationConstructorService(final StationRepository stationRepository) {
+        this.stationRepository = stationRepository;
+    }
+}
+
+# setter 
+@Service
+public class StationSetterService {
+    private StationRepository stationRepository;
+
+    @Autowired
+    public void setStationRepository(StationRepository stationRepository) {
+        this.stationRepository = stationRepository;
+    }
+}
+
+# field 
+@Service
+public class StationFieldService {
+    @Autowired
+    private StationRepository stationRepository;
+
+}
+```
+
+자바빈 프로퍼티 규약 
+
+<aside>
+💡  참고: 자바빈 프로퍼티, 자바에서는 과거부터 필드의 값을 직접 변경하지 않고, setXxx, getXxx 라는 메서드를 통해서 값을 읽거나 수정하는 규칙을 만들었는데, 그것이 자바빈 프로퍼티 규약이다.
+자바빈 프로퍼티 규약 예시 ```
+
+class Data {
+   private int age;
+   public void setAge(int age) {
+      this.age = age;
+   }
+   public int getAge() {
+      return age;
+   }
+
+}
+
+</aside>
+
+### 옵션 처리
+
+주입할 스프링 빈이 없어도 동작해야 할 때가 있다.
+
+그런데 @Autowired 만 사용하면 required 옵션의 기본값이 true 로 되어 있어서 자동 주입 대상이 없으면 오류
+가 발생한다.
+자동 주입 대상을 옵션으로 처리하는 방법은 다음과 같다.
+@Autowired(required=false) : 자동 주입할 대상이 없으면 수정자 메서드 자체가 호출 안됨
+org.springframework.lang.@Nullable : 자동 주입할 대상이 없으면 null이 입력된다.
+Optional<> : 자동 주입할 대상이 없으면 Optional.empty 가 입력된다.
+
+```java
+//호출 안됨
+@Autowired(required = false)
+public void setNoBean1(Member member) {
+ System.out.println("setNoBean1 = " + member);
+}
+//null 호출
+@Autowired
+public void setNoBean2(@Nullable Member member) {
+ System.out.println("setNoBean2 = " + member);
+}
+//Optional.empty 호출
+@Autowired(required = false)
+public void setNoBean3(Optional<Member> member) {
+ System.out.println("setNoBean3 = " + member);
+}
+```
+
+### 
+
+### 조회 빈이 2개 이상 - 문제
+
+@Autowired 는 타입(Type)으로 조회한다. 그런데 
+
+DiscountPolicy 의 하위 타입인 FixDiscountPolicy , RateDiscountPolicy 둘다 스프링 빈으로 선언된 경우 
+
+- 하위 타입으로 지정하는건 DIP를 위배하고 유연성을 해친다
+
+1. @Autowired 필드 명 매칭
+    - 필드 명 매칭은 먼저 타입 매칭을 시도 하고 그 결과에 여러 빈이 있을 때 추가로 동작하는 기능이다.
+    
+    ```java
+    @Autowired
+    private DiscountPolicy rateDiscountPolicy
+    ```
+    
+2.  **@Primary 어노테이션 사용**
+
+`@Primary` 어노테이션을 사용하여 기본적으로 주입할 빈을 지정할 수 있습니다.
+
+```java
+@Component
+@Primary
+public class PrimaryBean implements MyService {
+    // 구현 내용
+}
+
+@Component
+public class SecondaryBean implements MyService {
+    // 구현 내용
+}
+
+@Service
+public class MyServiceConsumer {
+    private final MyService myService;
+
+    @Autowired
+    public MyServiceConsumer(MyService myService) {
+        this.myService = myService;
+    }
+}
+
+```
+
+이 경우 `PrimaryBean`이 기본적으로 주입됩니다.
+
+### 2. @Qualifier 어노테이션 사용
+
+`@Qualifier` 어노테이션을 사용하여 주입할 빈의 이름을 지정할 수 있습니다.
+
+```java
+java코드 복사
+@Component
+public class FirstBean implements MyService {
+    // 구현 내용
+}
+
+@Component
+public class SecondBean implements MyService {
+    // 구현 내용
+}
+
+@Service
+public class MyServiceConsumer {
+    private final MyService myService;
+
+    @Autowired
+    public MyServiceConsumer(@Qualifier("secondBean") MyService myService) {
+        this.myService = myService;
+    }
+}
+
+```
+
+이 경우 `SecondBean`이 주입됩니다.
+
+### 애노테이션 직접 만들기
+
+애노테이션에는 상속이라는 개념이 없다. 이렇게 여러 애노테이션을 모아서 사용하는 기능은 스프링이 지원해주는 기능이다. @Qualifier 뿐만 아니라 다른 애노테이션들도 함께 조합해서 사용할 수 있다. 단적으로 @Autowired 도 재정의 할 수 있다. 물론 스프링이 제공하는 기능을 뚜렷한 목적 없이 **무분별하게 재정의 하는 것은 유지보수에 더 혼란만 가중할 수 있다**
+
+### 조회한 같은 타입의 빈이 모두 필요할때 List,Map
+
+```java
+private final Map<String, DiscountPolicy> policyMap;
+private final List<DiscountPolicy> policies;
+
+public DiscountService(Map<String, DiscountPolicy> policyMap,
+List<DiscountPolicy> policies) {
+	 this.policyMap = policyMap;
+	 this.policies = policies;
+	 System.out.println("policyMap = " + policyMap);
+	 System.out.println("policies = " + policies);
+ }
+```
+
+### 스프링에서 자동 빈 등록과 수동 빈 등록의 운영 기준
+
+### 자동 빈 등록의 장점
+
+- **편리함**: @Component, @Controller, @Service, @Repository 어노테이션을 통해 빈을 쉽게 등록할 수 있습니다.
+- **유지보수성**: 스프링 부트는 컴포넌트 스캔을 기본으로 사용하며, 조건이 맞으면 스프링 부트의 다양한 빈도 자동으로 등록됩니다.
+- **OCP, DIP 준수**: 자동 빈 등록을 사용해도 개방-폐쇄 원칙(OCP)과 의존성 역전 원칙(DIP)을 지킬 수 있습니다.
+
+### 수동 빈 등록이 필요한 경우
+
+1. **기술 지원 로직**:
+    - 기술적인 문제나 공통 관심사(AOP) 등을 처리하는 로직은 수동 빈 등록을 통해 명확히 드러내는 것이 좋습니다.
+    - 데이터베이스 연결, 공통 로그 처리 등 애플리케이션 전반에 영향을 미치는 빈은 수동으로 등록하여 설정 정보에서 명확히 보이도록 합니다.
+2. **비즈니스 로직에서 다형성을 적극 활용할 때**:
+    - 의존 관계 자동 주입으로 List나 Map에 여러 빈을 주입받는 경우, 어떤 빈들이 주입될지 한눈에 파악하기 어렵습니다.
+    - 이런 경우 수동 빈 등록을 통해 설정 정보를 명확히 하고, 필요한 빈이 무엇인지 쉽게 파악할 수 있도록 합니다.
+
+### 실무에서의 운영 기준
+
+- **업무 로직 빈**:
+    - 컨트롤러, 서비스, 리포지토리 등 비즈니스 요구사항을 개발할 때 추가되거나 변경되는 빈.
+    - 수가 많고 유사한 패턴이 반복되므로, 자동 빈 등록을 적극 사용합니다.
+    - 문제가 발생해도 원인을 쉽게 파악할 수 있습니다.
+- **기술 지원 빈**:
+    - 기술적인 문제나 공통 관심사(AOP)를 처리하는 빈.
+    - 수가 적고 애플리케이션 전반에 영향을 미치므로, 수동 빈 등록을 통해 설정 정보에 명확히 나타내는 것이 좋습니다.
+    - 적용 여부를 명확히 파악하기 어려운 경우가 많으므로, 수동 빈 등록으로 관리합니다.
+
+### 예시: 수동 빈 등록
+
+다형성을 적극 활용하는 비즈니스 로직의 경우 수동으로 빈을 등록하는 예시입니다.
+
+```java
+java코드 복사
+@Configuration
+public class DiscountPolicyConfig {
+
+    @Bean
+    public DiscountPolicy rateDiscountPolicy() {
+        return new RateDiscountPolicy();
+    }
+
+    @Bean
+    public DiscountPolicy fixDiscountPolicy() {
+        return new FixDiscountPolicy();
+    }
+}
+
+```
+
+이 설정 정보만 보면 빈의 이름과 어떤 빈들이 주입될지 한눈에 파악할 수 있습니다.
+
+### 스프링과 스프링 부트의 자동 등록 예외
+
+- 스프링과 스프링 부트가 자동으로 등록하는 빈은 예외입니다. 이런 빈들은 스프링 자체를 잘 이해하고, 스프링의 의도대로 사용하는 것이 중요합니다.
+- 예를 들어, 스프링 부트는 데이터베이스 연결(DataSource) 등의 기술 지원 로직도 자동으로 등록합니다. 이 경우 스프링 부트의 매뉴얼을 참고하여 편리하게 사용하는 것이 좋습니다.
+- 반면, 직접 기술 지원 객체를 등록할 경우 수동으로 등록하여 명확하게 드러내는 것이 좋습니다.
+
+### 정리
+
+- **자동 빈 등록**: 업무 로직 빈(컨트롤러, 서비스, 리포지토리 등)에 주로 사용. 편리하고 유지보수성 높음.
+- **수동 빈 등록**: 기술 지원 빈과 다형성을 적극 활용하는 비즈니스 로직에 사용. 명확하고 관리 용이.

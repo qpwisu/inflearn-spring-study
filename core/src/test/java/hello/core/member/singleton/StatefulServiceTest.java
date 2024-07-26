@@ -1,4 +1,4 @@
-package hello.core.singleton;
+package hello.core.member.singleton;
 
 import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.Test;

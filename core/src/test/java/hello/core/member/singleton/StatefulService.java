@@ -1,4 +1,4 @@
-package hello.core.singleton;
+package hello.core.member.singleton;
 
 public class StatefulService {
 
