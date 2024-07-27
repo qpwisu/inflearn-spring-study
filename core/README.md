@@ -919,3 +919,420 @@ public class DiscountPolicyConfig {
 
 - **자동 빈 등록**: 업무 로직 빈(컨트롤러, 서비스, 리포지토리 등)에 주로 사용. 편리하고 유지보수성 높음.
 - **수동 빈 등록**: 기술 지원 빈과 다형성을 적극 활용하는 비즈니스 로직에 사용. 명확하고 관리 용이.
+
+## 세션[8] 빈 생명주기 콜백(20240727)
+
+---
+
+빈 생명주기 콜데이터 베이스 커넥션 풀, 네트워크 소켓처럼 애플리케이션 시작 시점과 종료시점에서 객체의 초기화와 종료작업이 필요하다 
+
+- **데이터베이스 커넥션 풀**은 애플리케이션이 데이터베이스와의 연결을 효율적으로 관리하기 위해 사용되는 기술입니다. 커넥션 풀은 미리 일정 수의 데이터베이스 연결을 생성하여 풀(Pool)에 보관하고, 애플리케이션이 필요할 때마다 이를 재사용합니다.
+
+### **스프링 빈의 이벤트 라이프사이클**
+
+**스프링 컨테이너 생성 → 스프링 빈 생성 의존관계 주입 → 초기화 콜백 → 사용 → 소멸전 콜백 → 스프링 종료**
+
+객체 생성 
+
+ `NetworkClient networkClient = new NetworkClient();`
+
+- 이 객체가 초기화가 되어 있어야 내부 기능을 사용이 가능하다
+
+객체 초기화,의존관계 주입
+
+ `networkClient.setUrl("[http://hello-spring.dev](http://hello-spring.dev/)");`
+
+- 의존관계를 주입하고 필요한 데이터의 값을 채워넣어야 이게 필요한 메서드를 사용할 수 있다
+- 의존관계 주입이 완료되면 스프링 빈에게  콜백 메서드를 통해서 초기화 시점을 알려준다
+
+### 초기화 콜백(빈이 생성되고, 빈의 의존관계 주입이 완료된 후 호출), 소멸전 콜백(: 빈이 소멸되기 직전에 호출) 3가지
+
+1. **인터페이스 InitializingBean, DisposableBean (사용 x)**
+    
+    위 인터페이스를 상속해서 afterPropertiesSet, destroy 메서드를 오버라이딩
+    
+    ```java
+    public class NetworkClient implements InitializingBean, DisposableBean {
+    		@Override
+    		 public void afterPropertiesSet() throws Exception {
+    		 connect();
+    		 call("초기화 연결 메시지");
+    		 }
+    		 @Override
+    		 public void destroy() throws Exception {
+    		 disConnect();
+    		 }
+    ```
+    
+2. 빈 등록 초기화, 소멸 메서드 지정
+    
+    설정 정보에 @Bean(initMethod = "init", destroyMethod = "close") 처럼 초기화, 소멸 메서드를 지정할 수 있다.
+    
+    - init은 초기화 메서드, destroyMethod는 소멸 메서드
+    - 
+3. 애노테이션 @PostConstruct, @PreDestroy (권장방식)
+    
+    ```java
+     @PostConstruct
+     public void init() {
+    	 System.out.println("NetworkClient.init");
+    	 connect();
+    	 call("초기화 연결 메시지");
+     }
+     @PreDestroy
+     public void close() {
+    	 System.out.println("NetworkClient.close");
+    	 disConnect();
+     }
+    ```
+    
+
+### 스프링 빈 생명주기 콜백 3가지 방법 비교
+
+| 방법 | 특징 | 장점 | 단점 |
+| --- | --- | --- | --- |
+| 인터페이스 (InitializingBean, DisposableBean) | - 스프링 전용 인터페이스 사용<br>- afterPropertiesSet()와 destroy() 메서드 구현 | - 초기화와 소멸 메서드를 명확하게 정의 가능<br>- 코드 내부에서 생명주기 메서드 호출 보장 | - 스프링 프레임워크에 의존적<br>- 초기화와 소멸 메서드 이름 변경 불가<br>- 외부 라이브러리에는 적용 불가 |
+| 설정 정보에서 초기화, 소멸 메서드 지정 | - @Bean(initMethod, destroyMethod) 속성 사용<br>- 초기화와 소멸 메서드를 설정 정보에 지정 | - 메서드 이름을 자유롭게 지정 가능<br>- 스프링 코드에 의존하지 않음<br>- 외부 라이브러리에도 적용 가능 | - 설정 정보와 코드가 분리되어 있어 관리가 복잡할 수 있음 |
+| 애노테이션 (@PostConstruct, @PreDestroy) | - JSR-250 자바 표준 애노테이션 사용<br>- @PostConstruct와 @PreDestroy 메서드에 적용 | - 가장 편리하고 간단한 방법<br>- 스프링 외의 다른 컨테이너에서도 동작<br>- 컴포넌트 스캔과 잘 어울림 | - 외부 라이브러리에는 적용 불가 |
+
+## 세션[9] 빈 스코프(20240727)
+
+---
+
+빈스코프 : 빈이 존재할 수 있는 범위를 뜻한다.
+
+1. 싱클톤 스코프 : 기본 스코프, 스프링 컨테이너의 시작과 종료까지 유지되는 가장 넓은 범위의 스코프이다
+    - 싱글톤 스코프의 빈을 조회하면 스프링 컨테이너는 항상 같은 인스턴스의 스프링 빈을 반환
+2. 프로토타입 스코프 : 스프링 컨테이너는 프로토타입 빈의 생성과 의존관계 주입까지만 관여하고 더는 관리하지 않는 매우 짧은 범위의 스코프이다. 소멸에 관여하지 않는다
+    - 프로토타입 스코프를 스프링 컨테이너에 조회하면 스프링 컨테이너는 **항상 새로운 인스턴스를 생성해서 반환**
+    - 핵심은 스프링 컨테이너는 프로토타입 빈을 생성하고, 의존관계 주입, 초기화까지만 처리한다는 것이다. 클라이언트에 빈을 반환하고, 이후 스프링 컨테이너는 생성된 프로토타입 빈을 관리하지 않는다. 고로 소멸을 처리해줘야한다
+    - 클라이언트가 관리해여하고 @PreDestroy 같은 종료 메서드가 호출되지 않는다. @PostConstruct 만 실행
+    
+    `@Scope("prototype")
+    static class PrototypeBean {`
+    
+3. 웹 관련 스코프 
+    
+    request : 웹 요청이 들어오고 나갈때 까지 유지되는 스코프이다.
+    
+    session : 웹 세션이 생성되고 종료될 때 까지 유지되는 스코프이다
+    
+    application : 웹의 서블릿 컨텍스트와 같은 범위로 유지되는 스코프이다.
+    
+
+### 프로토타입 스코프와 싱글톤 빈의 문제점
+
+스프링에서 프로토타입 스코프 빈과 싱글톤 빈을 함께 사용할 때 발생하는 문제는 주로 프로토타입 빈의 생명주기 관리와 관련이 있습니다. 싱글톤 빈이 프로토타입 빈을 주입받을 때, 프로토타입 빈이 의도한 대로 매번 새롭게 생성되지 않고, 싱글톤 빈이 생성될 때 한 번만 주입되기 때문에 문제가 발생합니다.
+
+### 문제점
+
+1. **프로토타입 빈의 재사용**:
+    - 싱글톤 빈이 프로토타입 빈을 의존성으로 가지면, 싱글톤 빈이 생성될 때 프로토타입 빈이 한 번 주입되고 그 이후로는 동일한 인스턴스를 계속 사용하게 됩니다.
+    - 이는 프로토타입 빈이 매번 새로운 인스턴스로 생성되어야 한다는 개념에 반합니다.
+2. **의도된 프로토타입 동작이 불가능**:
+    - 프로토타입 빈의 생명주기는 짧지만, 싱글톤 빈이 이를 참조하면 프로토타입 빈이 의도한 대로 매번 새로운 인스턴스로 사용되지 않습니다.
+
+### 해결 방법
+
+### 1. ObjectProvider 사용
+
+`ObjectProvider`는 스프링에서 제공하는 기능으로, 필요한 시점에 프로토타입 빈을 요청할 수 있게 합니다.
+
+```java
+java코드 복사
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.stereotype.Component;
+
+@Component
+public class SingletonBean {
+    private final ObjectProvider<PrototypeBean> prototypeBeanProvider;
+
+    public SingletonBean(ObjectProvider<PrototypeBean> prototypeBeanProvider) {
+        this.prototypeBeanProvider = prototypeBeanProvider;
+    }
+
+    public void usePrototypeBean() {
+        PrototypeBean prototypeBean = prototypeBeanProvider.getObject();
+        prototypeBean.doSomething();
+    }
+}
+
+```
+
+### 2. javax.inject.Provider 사용 - 많이 사용
+
+JSR-330 표준인 `javax.inject.Provider` 인터페이스를 사용하여 프로토타입 빈을 요청할 수 있습니다.
+
+```java
+java코드 복사
+import javax.inject.Provider;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
+
+@Component
+public class SingletonBean {
+    private final Provider<PrototypeBean> prototypeBeanProvider;
+
+    @Autowired
+    public SingletonBean(Provider<PrototypeBean> prototypeBeanProvider) {
+        this.prototypeBeanProvider = prototypeBeanProvider;
+    }
+
+    public void usePrototypeBean() {
+        PrototypeBean prototypeBean = prototypeBeanProvider.get();
+        prototypeBean.doSomething();
+    }
+}
+
+```
+
+### ObjectProvider와 Provider의 차이점
+
+1. **ObjectProvider**:
+    - 스프링 프레임워크에서 제공하는 기능입니다.
+    - `getIfAvailable()`, `getIfUnique()`, `stream()` 등의 추가 메서드를 제공하여 더 유연한 빈 조회 기능을 지원합니다.
+2. **Provider (javax.inject.Provider)**:
+    - JSR-330 표준으로 자바 표준 사양입니다.
+    - 스프링에 종속적이지 않으며, 다른 DI 프레임워크에서도 사용될 수 있습니다.
+    - `get()` 메서드 하나만 제공하여 단순한 빈 조회 기능만 지원합니다.
+
+### 예제 코드
+
+### ObjectProvider 사용 예제
+
+```java
+java코드 복사
+@Component
+public class SingletonBean {
+    private final ObjectProvider<PrototypeBean> prototypeBeanProvider;
+
+    public SingletonBean(ObjectProvider<PrototypeBean> prototypeBeanProvider) {
+        this.prototypeBeanProvider = prototypeBeanProvider;
+    }
+
+    public void usePrototypeBean() {
+        PrototypeBean prototypeBean = prototypeBeanProvider.getObject();
+        prototypeBean.doSomething();
+    }
+}
+
+```
+
+### javax.inject.Provider 사용 예제
+
+```java
+java코드 복사
+import javax.inject.Provider;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
+
+@Component
+public class SingletonBean {
+    private final Provider<PrototypeBean> prototypeBeanProvider;
+
+    @Autowired
+    public SingletonBean(Provider<PrototypeBean> prototypeBeanProvider) {
+        this.prototypeBeanProvider = prototypeBeanProvider;
+    }
+
+    public void usePrototypeBean() {
+        PrototypeBean prototypeBean = prototypeBeanProvider.get();
+        prototypeBean.doSomething();
+    }
+}
+
+```
+
+### 요약
+
+- **문제점**: 싱글톤 빈이 프로토타입 빈을 참조할 때, 프로토타입 빈이 매번 새롭게 생성되지 않음.
+- **해결책**: `ObjectProvider` 또는 `javax.inject.Provider`를 사용하여 필요한 시점에 프로토타입 빈을 생성.
+- **차이점**:
+    - `ObjectProvider`: 스프링 프레임워크 제공, 추가적인 유연성 메서드 포함.
+    - `javax.inject.Provider`: 자바 표준, 단순한 빈 조회 기능만 제공.
+
+이러한 방법을 통해 싱글톤 빈과 프로토타입 빈을 함께 사용하면서도 프로토타입 빈의 의도된 생명주기를 유지할 수 있습니다.
+
+### Request 스코프
+
+웹 스코프(Web Scope)는 웹 애플리케이션에서 사용되는 빈의 생명주기를 정의하는 스프링의 기능입니다. 웹 스코프는 웹 요청과 관련된 컨텍스트에서 빈이 어떻게 생성되고 관리되는지를 규정합니다. 스프링 프레임워크는 다음과 같은 주요 웹 스코프를 지원합니다:
+
+### 주요 웹 스코프 종류
+
+1. **request**: 각 HTTP 요청마다 새로운 빈 인스턴스를 생성합니다. 요청이 끝나면 빈도 소멸합니다.
+2. **session**: 각 HTTP 세션마다 새로운 빈 인스턴스를 생성합니다. 세션이 끝나면 빈도 소멸합니다.
+3. **application**: 서블릿 컨텍스트와 생명주기를 같이 하는 빈입니다. 웹 애플리케이션이 시작될 때 생성되고, 종료될 때 소멸됩니다.
+4. **websocket**: 웹소켓 세션과 생명주기를 같이 하는 빈입니다. 웹소켓 세션이 열릴 때 생성되고, 닫힐 때 소멸됩니다.
+
+### 각 스코프의 특징
+
+1. **Request Scope**:
+    
+    동시에 여러 이용자 http 요청을 할때 사용하기 좋음, 각각의 요청마다 다른 빈을 생성 
+    
+    - **특징**: HTTP 요청이 시작될 때 빈이 생성되고, 요청이 끝날 때 소멸합니다.
+    - **사용 예**: HTTP 요청마다 다른 데이터를 처리해야 하는 경우, 예를 들어 요청에 따른 사용자 데이터를 처리할 때.
+    - **예제**:
+        
+        ```java
+        java코드 복사
+        @Component
+        @Scope(value = WebApplicationContext.SCOPE_REQUEST, 
+        proxyMode = ScopedProxyMode.TARGET_CLASS)
+        public class MyRequestBean {
+            // ...
+        }
+        
+        @Scope(value = "request", proxyMode = ScopedProxyMode.TARGET_CLASS)
+        ```
+        
+2. **Session Scope**:
+    - **특징**: HTTP 세션이 시작될 때 빈이 생성되고, 세션이 끝날 때 소멸합니다.
+    - **사용 예**: 로그인한 사용자 정보를 세션 동안 유지해야 할 때.
+    - **예제**:
+        
+        ```java
+        java코드 복사
+        @Component
+        @Scope(value = WebApplicationContext.SCOPE_SESSION, proxyMode = ScopedProxyMode.TARGET_CLASS)
+        public class MySessionBean {
+            // ...
+        }
+        
+        ```
+        
+3. **Application Scope**:
+    - **특징**: 웹 애플리케이션이 시작될 때 빈이 생성되고, 종료될 때 소멸합니다.
+    - **사용 예**: 애플리케이션 전체에서 공유해야 하는 설정 정보나 리소스.
+    - **예제**:
+        
+        ```java
+        java코드 복사
+        @Component
+        @Scope(value = WebApplicationContext.SCOPE_APPLICATION)
+        public class MyApplicationBean {
+            // ...
+        }
+        
+        ```
+        
+4. **WebSocket Scope**:
+    - **특징**: 웹소켓 세션이 열릴 때 빈이 생성되고, 세션이 닫힐 때 소멸합니다.
+    - **사용 예**: 웹소켓 연결 상태를 관리할 때.
+    - **예제**:
+        
+        ```java
+        java코드 복사
+        @Component
+        @Scope(value = "websocket", proxyMode = ScopedProxyMode.TARGET_CLASS)
+        public class MyWebSocketBean {
+            // ...
+        }
+        
+        ```
+        
+
+### 웹 스코프 사용 시 고려사항
+
+- **프록시 모드**: 웹 스코프 빈은 대부분 `proxyMode`를 사용하여 프록시 객체로 빈을 주입합니다. 이는 실제 빈이 필요한 시점에 생성되도록 하여 생명주기를 적절히 관리합니다.
+- **메모리 관리**: 세션 스코프나 애플리케이션 스코프 빈은 메모리 사용량이 증가할 수 있으므로 적절한 관리가 필요합니다.
+- **동시성 문제**: 여러 요청이 동시에 같은 빈을 참조할 경우 동시성 문제가 발생할 수 있으므로, 필요에 따라 동기화 처리가 필요합니다.
+
+### 정리
+
+웹 스코프는 웹 애플리케이션에서 빈의 생명주기를 효율적으로 관리할 수 있도록 도와줍니다. 요청, 세션, 애플리케이션, 웹소켓의 다양한 스코프를 통해 각 상황에 맞는 빈 생명주기를 적용할 수 있습니다. 이러한 스코프를 적절히 활용하면 애플리케이션의 유연성과 효율성을 높일 수 있습니다.
+
+### 스코프와 프록시
+
+스프링에서 스코프와 프록시를 사용하여 빈의 라이프사이클을 관리하고, 특히 프로토타입 스코프나 웹 스코프와 같은 특정 상황에서 보다 유연하게 빈을 사용할 수 있습니다. 이를 통해 주입 시점이 아닌 실제 사용 시점에 빈이 생성되도록 할 수 있습니다.
+
+### 1. 스코프와 프록시의 동작 원리
+
+스프링에서는 다양한 스코프를 제공하며, 그 중에서도 `request` 스코프는 HTTP 요청마다 새로운 빈 인스턴스를 생성합니다. 그러나, 싱글톤 빈과 함께 사용할 때는 특정한 문제가 발생합니다. 이를 해결하기 위해 프록시 모드를 사용할 수 있습니다.
+
+### 예시 코드
+
+```java
+java코드 복사
+@Component
+@Scope(value = "request", proxyMode = ScopedProxyMode.TARGET_CLASS)
+public class MyLogger {
+    private String requestURL;
+
+    public void setRequestURL(String requestURL) {
+        this.requestURL = requestURL;
+    }
+
+    public void log(String message) {
+        System.out.println("[" + requestURL + "] " + message);
+    }
+}
+
+```
+
+프록시 모드를 사용하면 `MyLogger`의 가짜 프록시 객체가 생성되어 주입됩니다. 이 프록시 객체는 실제 `MyLogger` 빈을 사용해야 할 때 진짜 빈을 요청합니다.
+
+### 2. 프록시 사용의 동작 과정
+
+1. **프록시 객체 생성**: `@Scope` 어노테이션에서 `proxyMode = ScopedProxyMode.TARGET_CLASS`를 지정하면, 스프링은 `CGLIB` 라이브러리를 사용하여 `MyLogger` 클래스의 프록시 객체를 생성합니다.
+2. **프록시 객체 주입**: 스프링 컨테이너는 실제 `MyLogger` 빈 대신 이 프록시 객체를 주입합니다.
+3. **지연 로딩**: 클라이언트 코드가 `MyLogger`의 메서드를 호출할 때, 프록시 객체는 실제 `MyLogger` 빈을 찾아 메서드를 호출합니다.
+4. **다형성**: 프록시 객체는 원본 클래스(`MyLogger`)를 상속받기 때문에, 클라이언트 입장에서는 원본 객체인지 프록시 객체인지 구분할 필요 없이 동일하게 사용할 수 있습니다.
+
+### 3. 코드 예제와 사용
+
+### `LogDemoController`와 `LogDemoService`
+
+```java
+java코드 복사
+@Controller
+@RequiredArgsConstructor
+public class LogDemoController {
+    private final LogDemoService logDemoService;
+    private final MyLogger myLogger;
+
+    @RequestMapping("log-demo")
+    @ResponseBody
+    public String logDemo(HttpServletRequest request) {
+        String requestURL = request.getRequestURL().toString();
+        myLogger.setRequestURL(requestURL);
+        myLogger.log("controller test");
+        logDemoService.logic("testId");
+        return "OK";
+    }
+}
+
+@Service
+@RequiredArgsConstructor
+public class LogDemoService {
+    private final MyLogger myLogger;
+
+    public void logic(String id) {
+        myLogger.log("service id = " + id);
+    }
+}
+
+```
+
+이 코드는 `Provider`를 사용하지 않고 프록시 모드를 사용해도 동일하게 동작합니다. 프록시 모드 덕분에 `LogDemoController`와 `LogDemoService`는 `Provider`를 사용 전과 동일한 코드를 유지할 수 있습니다.
+
+### 4. 웹 스코프와 프록시 동작 원리
+
+- **프록시 객체 생성**: `@Scope(proxyMode = ScopedProxyMode.TARGET_CLASS)` 설정으로 프록시 객체가 생성됩니다.
+- **프록시 객체 주입**: **프록시 객체가 주입되며, 이 객체는 실제 요청 시점에 진짜 빈을 요청합니다.**
+- **실제 빈 접근**: 클라이언트가 메서드를 호출하면 프록시 객체가 실제 빈을 찾아 메서드를 호출합니다.
+
+### 5. 프록시 방식의 특징
+
+- **클라이언트의 편리성**: 프록시 객체 덕분에 클라이언트는 마치 싱글톤 빈을 사용하듯이 편리하게 요청 스코프 빈을 사용할 수 있습니다.
+- **지연 로딩**: 실제 빈의 생성을 지연시켜 필요한 시점에 생성합니다.
+- **다형성과 DI**: 프록시 객체를 사용하여 다형성과 의존성 주입의 이점을 누릴 수 있습니다.
+
+### 6. 주의사항
+
+- **유지보수**: 프록시 객체는 마치 싱글톤처럼 동작하지만 실제로는 다르게 동작하므로, 유지보수 시 주의가 필요합니다.
+- **필요한 곳에만 사용**: 이런 특별한 스코프는 꼭 필요한 곳에만 최소화해서 사용해야 합니다.
+
+### 정리
+
+스프링에서 스코프와 프록시를 사용하면, 프로토타입 빈이나 웹 스코프 빈을 보다 유연하게 사용할 수 있습니다. 프록시 모드를 사용하면 주입 시점이 아닌 실제 사용 시점에 빈이 생성되어, 클라이언트는 싱글톤 빈을 사용하는 것처럼 편리하게 사용할 수 있습니다. 하지만 유지보수에 주의하고 필요한 곳에만 사용하는 것이 중요합니다.

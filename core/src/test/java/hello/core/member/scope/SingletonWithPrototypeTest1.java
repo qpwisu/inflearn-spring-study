@@ -1,4 +1,4 @@
-package hello.core.scope;
+package hello.core.member.scope;
 
 import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.Test;
